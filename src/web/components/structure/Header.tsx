@@ -10,6 +10,7 @@ import {LogoutIcon, MySettingsIcon} from 'web/components/icon';
 import SessionTimer from 'web/components/session-timer/SessionTimer';
 import getLogo from 'web/components/structure/GetLogo';
 import LanguageSwitch from 'web/components/structure/LanguageSwitch';
+import {clearOperatorAuthorization} from 'web/credential-aware/api';
 import useGmp from 'web/hooks/useGmp';
 import useManualURL from 'web/hooks/useManualURL';
 import useTranslation from 'web/hooks/useTranslation';
@@ -37,6 +38,7 @@ const Header = () => {
   }, [navigate]);
 
   const handleLogout = useCallback(() => {
+    clearOperatorAuthorization();
     if (username) {
       const currentPath = `${location.pathname}${location.search ?? ''}`;
       saveLastVisitedPage(username, currentPath);
