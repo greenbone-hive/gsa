@@ -65,7 +65,7 @@ const TaskDetails = ({entity, links = true}: TaskDetailsProps) => {
   const gmp = useGmp();
   const dispatch = useDispatch();
   const features = useFeatures();
-  const {byTaskId} = useMultiTargetTasks();
+  const {byTaskId, error: groupLoadError} = useMultiTargetTasks();
   const group = byTaskId[entity.id];
   const isMultiTarget =
     Boolean(group) ||
@@ -107,7 +107,11 @@ const TaskDetails = ({entity, links = true}: TaskDetailsProps) => {
     return group ? (
       <MultiTargetTaskPanel group={group} />
     ) : (
-      <p>Loading multi-target scan status…</p>
+      <p role={groupLoadError ? 'alert' : undefined}>
+        {groupLoadError
+          ? `Multi-target scan status unavailable: ${groupLoadError}`
+          : 'Loading multi-target scan status…'}
+      </p>
     );
   }
 

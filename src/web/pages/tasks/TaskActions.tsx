@@ -54,7 +54,7 @@ const TaskActions = ({
   onTaskStopClick,
 }: TaskActionsProps) => {
   const [_] = useTranslation();
-  const {byTaskId, start, stop} = useMultiTargetTasks();
+  const {byTaskId, error: groupLoadError, start, stop} = useMultiTargetTasks();
   const [groupError, setGroupError] = useState('');
   const group = byTaskId[entity.id];
   const isMultiTarget =
@@ -90,7 +90,12 @@ const TaskActions = ({
       >
         <IconDivider grow align={['center', 'center']}>
           {!group ? (
-            <span title={_('Loading multi-target task controls')}>…</span>
+            <span
+              role={groupLoadError ? 'alert' : undefined}
+              title={groupLoadError || _('Loading multi-target task controls')}
+            >
+              {groupLoadError ? 'Scan controls unavailable' : '…'}
+            </span>
           ) : active ? (
             <StopIcon
               title={_('Stop all hosts')}

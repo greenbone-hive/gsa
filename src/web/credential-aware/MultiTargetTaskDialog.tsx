@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-import {useEffect, useState} from 'react';
+import {useEffect, useRef, useState} from 'react';
 import SaveDialog from 'web/components/dialog/SaveDialog';
 import Button from 'web/components/form/Button';
 import Checkbox from 'web/components/form/Checkbox';
@@ -47,6 +47,8 @@ const MultiTargetTaskDialog = ({
   const [configId, setConfigId] = useState(initial?.configId || '');
   const [scannerId, setScannerId] = useState(initial?.scannerId || '');
   const [plan, setPlan] = useState<TaskPlan>();
+  const revision = useRef(0);
+  const [previewRevision, setPreviewRevision] = useState<number>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [previewError, setPreviewError] = useState('');
@@ -88,13 +90,19 @@ const MultiTargetTaskDialog = ({
   });
 
   const change = <T,>(setter: (value: T) => void, value: T) => {
+    revision.current += 1;
     setter(value);
     setPlan(undefined);
+    setPreviewRevision(undefined);
+    setLoading(false);
     setError('');
     setPreviewError('');
   };
 
   const preview = async () => {
+    const currentRevision = ++revision.current;
+    setPlan(undefined);
+    setPreviewRevision(undefined);
     setPreviewError('');
     if (!name.trim() || !targetIds.length || !configId || !scannerId) {
       setPlan(undefined);
@@ -110,17 +118,23 @@ const MultiTargetTaskDialog = ({
         'preview',
         request(),
       );
-      setPlan(result);
+      if (revision.current === currentRevision) {
+        setPlan(result);
+        setPreviewRevision(currentRevision);
+      }
     } catch (err) {
-      setPlan(undefined);
-      setPreviewError((err as Error).message);
+      if (revision.current === currentRevision) {
+        setPreviewError((err as Error).message);
+      }
     } finally {
-      setLoading(false);
+      if (revision.current === currentRevision) {
+        setLoading(false);
+      }
     }
   };
 
   const create = async () => {
-    if (!plan) {
+    if (!plan || previewRevision !== revision.current) {
       throw new Error(
         'Select the source targets and preview the scan plan before creating the task.',
       );
@@ -145,6 +159,7 @@ const MultiTargetTaskDialog = ({
       title="New multi-target task"
       width="58vw"
       onClose={onClose}
+      onError={reason => setError(reason.message)}
       onErrorClose={() => setError('')}
       onSave={create}
     >

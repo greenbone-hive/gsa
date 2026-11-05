@@ -23,9 +23,9 @@ import TaskDashboard, {TASK_DASHBOARD_ID} from 'web/pages/tasks/dashboard';
 import TaskToolBarIcons from 'web/pages/tasks/icons/TaskListPageToolBarIcons';
 import TaskComponent from 'web/pages/tasks/TaskComponent';
 import TaskFilterDialog from 'web/pages/tasks/TaskFilterDialog';
-import TaskTable from 'web/pages/tasks/TaskTable';
+import TaskTable, {TaskTableWithoutBulkTrash} from 'web/pages/tasks/TaskTable';
 import {
-  loadEntities,
+  loadVisibleEntities,
   selector as entitiesSelector,
 } from 'web/store/entities/tasks';
 
@@ -123,7 +123,9 @@ const TaskListPage = ({
             filtersFilter={TASKS_FILTER_FILTER}
             sectionIcon={<TaskIcon size="large" />}
             showMultiTarget={showCredentialAwareTasks}
-            table={TaskTable}
+            table={
+              showCredentialAwareTasks ? TaskTableWithoutBulkTrash : TaskTable
+            }
             title={_('Tasks')}
             toolBarIcons={TaskToolBarIcons}
             onAdvancedTaskWizardClick={advancedTaskWizard}
@@ -164,6 +166,6 @@ export const taskReloadInterval = ({entities = []}: {entities: Task[]}) =>
 
 export default withEntitiesContainer('task', {
   entitiesSelector,
-  loadEntities,
+  loadEntities: loadVisibleEntities,
   reloadInterval: taskReloadInterval,
 })(TaskListPage);
