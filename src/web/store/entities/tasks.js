@@ -77,7 +77,14 @@ export const loadVisibleEntities = gmp => filter => (dispatch, getState) => {
         all: totalResponse.meta.counts.filtered,
       });
       return dispatch(
-        entitiesLoadingActions.success(response.data, filter, filter, counts),
+        entitiesLoadingActions.success(
+          response.data,
+          filter,
+          (query ?? QueryFilter.fromString()).mergeExtraKeywords(
+            response.meta.filter,
+          ),
+          counts,
+        ),
       );
     },
     error => dispatch(entitiesLoadingActions.error(error, filter)),

@@ -102,4 +102,37 @@ describe('visible task loading', () => {
     expect(counts.filtered).toBe(2);
     expect(counts.all).toBe(14);
   });
+
+  test('keeps server pagination defaults without exposing child criteria', async () => {
+    const counts = new CollectionCounts({
+      all: 10,
+      filtered: 2,
+      first: 1,
+      length: 2,
+      rows: 10,
+    });
+    const gmp = {
+      settings: {enableCredentialAwareTasks: true},
+      tasks: {
+        get: testing.fn().mockResolvedValue({
+          data: [{id: 'visible'}],
+          meta: {
+            filter: QueryFilter.fromString(
+              'name~foo and not comment~"Credential review group " first=1 rows=10',
+            ),
+            counts,
+          },
+        }),
+      },
+    };
+    const filter = QueryFilter.fromString('name~foo');
+    const dispatch = testing.fn(action => action);
+    const state = {entities: {task: reducer(undefined, {type: 'init'})}};
+    await loadVisibleEntities(gmp)(filter)(dispatch, () => state);
+    const loaded = dispatch.mock.calls[1][0].loadedFilter;
+    expect(loaded.toFilterCriteriaString()).toBe('name~foo');
+    expect(loaded.get('first')).toBe(1);
+    expect(loaded.get('rows')).toBe(10);
+    expect(loaded.next().get('first')).toBe(11);
+  });
 });

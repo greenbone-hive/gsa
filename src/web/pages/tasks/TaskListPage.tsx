@@ -4,6 +4,7 @@
  */
 
 import {TASKS_FILTER_FILTER} from 'gmp/models/filter';
+import QueryFilter from 'gmp/models/filter/query-filter';
 import type Task from 'gmp/models/task';
 import DashboardControlsContainer from 'web/components/dashboard/DashboardControlsContainer';
 import {TaskIcon} from 'web/components/icon';
@@ -27,6 +28,7 @@ import TaskTable, {TaskTableWithoutBulkTrash} from 'web/pages/tasks/TaskTable';
 import {
   loadVisibleEntities,
   selector as entitiesSelector,
+  visibleTaskFilter,
 } from 'web/store/entities/tasks';
 
 type TaskListPageProps = WithEntitiesContainerComponentProps<Task>;
@@ -165,6 +167,10 @@ export const taskReloadInterval = ({entities = []}: {entities: Task[]}) =>
     : USE_DEFAULT_RELOAD_INTERVAL;
 
 export default withEntitiesContainer('task', {
+  bulkFilter: gmp =>
+    gmp.settings.enableCredentialAwareTasks
+      ? filter => QueryFilter.fromString(visibleTaskFilter(filter))
+      : undefined,
   entitiesSelector,
   loadEntities: loadVisibleEntities,
   reloadInterval: taskReloadInterval,
