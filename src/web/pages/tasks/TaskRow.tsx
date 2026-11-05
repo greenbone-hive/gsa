@@ -101,7 +101,7 @@ const TaskRow = ({
   ...props
 }: TaskRowProps) => {
   const [_] = useTranslation();
-  const {byTaskId} = useMultiTargetTasks();
+  const {byTaskId, error: groupLoadError} = useMultiTargetTasks();
   const group = byTaskId[entity.id];
   const isMultiTarget =
     Boolean(group) ||
@@ -235,7 +235,9 @@ const TaskRow = ({
           <span>
             {group
               ? `${group.status} · ${group.done_count}/${group.host_count} hosts`
-              : 'Loading scan status…'}
+              : groupLoadError
+                ? `Scan status unavailable: ${groupLoadError}`
+                : 'Loading scan status…'}
           </span>
         ) : (
           <TaskStatus links={links} task={entity} />

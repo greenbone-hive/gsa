@@ -97,7 +97,7 @@ const TaskGroups = ({mode = 'tasks'}: Props) => {
       </h2>
       <p>
         {mode === 'tasks'
-          ? 'Run and monitor multi-target scans here. Expand a scan to see its hosts. Individual host tasks also appear in the Tasks list below.'
+          ? 'Run and monitor multi-target scans here. Expand a scan to see its hosts. Managed child scans stay in the background.'
           : 'Open results across all hosts in a multi-target scan. Individual host reports also appear in the Reports list below.'}
       </p>
       {error && <p role="alert">{error}</p>}

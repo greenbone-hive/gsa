@@ -43,7 +43,10 @@ const AssetCredentials = ({assetId, hostName}: Props) => {
   const [inventory, setInventory] = useState<Inventory>();
   const [overrides, setOverrides] = useState<AssetOverride[]>([]);
   const [service, setService] = useState('ssh');
-  const [credentialId, setCredentialId] = useState('');
+  const [selection, setSelection] = useState<{
+    assetId: string;
+    byService: Record<string, string>;
+  }>({assetId, byService: {}});
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
@@ -56,9 +59,6 @@ const AssetCredentials = ({assetId, hostName}: Props) => {
     setInventory(items);
     const hostOverrides = saved.filter(item => item.asset_id === assetId);
     setOverrides(hostOverrides);
-    setCredentialId(
-      hostOverrides.find(item => item.service === service)?.credential_id || '',
-    );
   };
 
   useEffect(() => {
@@ -71,6 +71,12 @@ const AssetCredentials = ({assetId, hostName}: Props) => {
     inventory?.credentials.filter(item =>
       SERVICE_TYPES[service].includes(item.type || ''),
     ) || [];
+  const credentialId =
+    (selection.assetId === assetId
+      ? selection.byService[service]
+      : undefined) ??
+    overrides.find(item => item.service === service)?.credential_id ??
+    '';
 
   const save = async () => {
     if (!credentialId) {
@@ -86,6 +92,13 @@ const AssetCredentials = ({assetId, hostName}: Props) => {
         credential_id: credentialId,
       });
       await reload();
+      setSelection(current => ({
+        assetId,
+        byService: {
+          ...(current.assetId === assetId ? current.byService : {}),
+          [service]: credentialId,
+        },
+      }));
       setMessage(`${SERVICE_NAMES[service]} credential saved for ${hostName}.`);
     } catch (err) {
       setError((err as Error).message);
@@ -103,6 +116,14 @@ const AssetCredentials = ({assetId, hostName}: Props) => {
         service: item.service,
       });
       await reload();
+      setSelection(current => {
+        if (current.assetId !== assetId) {
+          return current;
+        }
+        const byService = {...current.byService};
+        delete byService[item.service];
+        return {assetId, byService};
+      });
       setMessage(`${SERVICE_NAMES[item.service]} override removed.`);
     } catch (err) {
       setError((err as Error).message);
@@ -180,10 +201,6 @@ const AssetCredentials = ({assetId, hostName}: Props) => {
           onChange={value => {
             const selected = value || 'ssh';
             setService(selected);
-            setCredentialId(
-              overrides.find(item => item.service === selected)
-                ?.credential_id || '',
-            );
             setMessage('');
           }}
         />
@@ -197,7 +214,13 @@ const AssetCredentials = ({assetId, hostName}: Props) => {
           placeholder="Choose a credential"
           value={credentialId}
           onChange={value => {
-            setCredentialId(value || '');
+            setSelection(current => ({
+              assetId,
+              byService: {
+                ...(current.assetId === assetId ? current.byService : {}),
+                [service]: value || '',
+              },
+            }));
             setMessage('');
           }}
         />

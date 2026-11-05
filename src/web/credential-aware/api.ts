@@ -4,6 +4,41 @@
  */
 
 /** API of the isolated credential-aware task review service. */
+let operatorAuthorization: string | undefined;
+
+async function fetchWithOperator(
+  path: string,
+  init: RequestInit,
+): Promise<Response> {
+  const send = (authorization?: string) => {
+    const headers = new Headers(init.headers);
+    if (authorization) {
+      headers.set('Authorization', authorization);
+    }
+    return fetch(path, {...init, headers});
+  };
+  let response = await send(operatorAuthorization);
+  if (
+    response.status === 401 &&
+    response.headers.get('WWW-Authenticate')?.includes('Scan group operator')
+  ) {
+    operatorAuthorization = undefined;
+    // oxlint-disable-next-line eslint/no-alert
+    const credentials = window.prompt(
+      'Scan group operator authorization is required. Enter username:password',
+    );
+    if (!credentials) {
+      throw new Error('Scan group operator authorization is required.');
+    }
+    operatorAuthorization = `Basic ${btoa(credentials)}`;
+    response = await send(operatorAuthorization);
+    if (response.status === 401) {
+      operatorAuthorization = undefined;
+    }
+  }
+  return response;
+}
+
 export interface InventoryItem {
   id: string;
   name: string;
@@ -119,7 +154,7 @@ export async function credentialAwareApi<T>(
   if (!token) {
     throw new Error('Sign in to GSA before using credential-aware scans.');
   }
-  const response = await fetch(`/credential-api/${path}`, {
+  const response = await fetchWithOperator(`/credential-api/${path}`, {
     method: body === undefined ? 'GET' : 'POST',
     credentials: 'same-origin',
     cache: 'no-store',
@@ -138,7 +173,11 @@ export async function credentialAwareApi<T>(
       // GSAD returns a non-JSON response when the GSA session has expired.
     }
     if (response.status === 401 || response.status === 403) {
-      message = 'Your GSA session has expired. Sign in again.';
+      message = response.headers
+        .get('WWW-Authenticate')
+        ?.includes('Scan group operator')
+        ? 'Scan group operator authorization failed.'
+        : 'Your GSA session has expired. Sign in again.';
     }
     throw new Error(message);
   }
@@ -152,7 +191,7 @@ export async function downloadCombinedReport(
   if (!token) {
     throw new Error('Sign in to GSA before downloading a combined report.');
   }
-  const response = await fetch(
+  const response = await fetchWithOperator(
     `/credential-api/groups/${encodeURIComponent(groupId)}/report.csv`,
     {
       credentials: 'same-origin',
