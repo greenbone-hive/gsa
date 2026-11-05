@@ -5,6 +5,7 @@
 
 import {useEffect, useCallback} from 'react';
 import {useLocation} from 'react-router';
+import {clearOperatorAuthorization} from 'web/credential-aware/api';
 import useGmp from 'web/hooks/useGmp';
 import useUserIsLoggedIn from 'web/hooks/useUserIsLoggedIn';
 import useUserName from 'web/hooks/useUserName';
@@ -28,6 +29,7 @@ const Authorized = ({children}: AuthorizedProps) => {
       saveLastVisitedPage(username, currentPath);
     }
 
+    clearOperatorAuthorization();
     gmp.logout();
   }, [gmp, username, location]);
 
