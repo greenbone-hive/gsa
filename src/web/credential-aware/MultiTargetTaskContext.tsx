@@ -38,28 +38,33 @@ export const MultiTargetTasksProvider = ({children}: {children: ReactNode}) => {
   const [byTaskId, setByTaskId] = useState<Record<string, GroupSummary>>({});
   const [error, setError] = useState<string>();
 
-  const refresh = useCallback(async () => {
-    try {
-      const summaries = await credentialAwareApi<GroupSummary[]>(
-        token,
-        'groups/summary',
-      );
-      setByTaskId(
-        Object.fromEntries(
-          summaries
-            .filter(group => group.native_task_id)
-            .map(group => [group.native_task_id as string, group]),
-        ),
-      );
-      setError(undefined);
-    } catch (reason) {
-      setError((reason as Error).message);
-    }
-  }, [token]);
+  const refresh = useCallback(
+    async (interactive = true) => {
+      try {
+        const summaries = await credentialAwareApi<GroupSummary[]>(
+          token,
+          'groups/summary',
+          undefined,
+          {interactive},
+        );
+        setByTaskId(
+          Object.fromEntries(
+            summaries
+              .filter(group => group.native_task_id)
+              .map(group => [group.native_task_id as string, group]),
+          ),
+        );
+        setError(undefined);
+      } catch (reason) {
+        setError((reason as Error).message);
+      }
+    },
+    [token],
+  );
 
   useEffect(() => {
-    const update = () => void refresh();
-    queueMicrotask(update);
+    const update = () => void refresh(false);
+    queueMicrotask(() => void refresh());
     const interval = window.setInterval(update, 15000);
     window.addEventListener('credential-aware-groups-changed', update);
     return () => {

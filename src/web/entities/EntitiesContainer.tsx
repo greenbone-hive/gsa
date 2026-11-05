@@ -102,6 +102,7 @@ interface EntitiesContainerState<TModel extends Model = Model> {
 }
 
 interface EntitiesContainerProps<TModel extends Model = Model> {
+  bulkFilter?: (filter: FilterType) => FilterType;
   children: (props: EntitiesContainerRenderProps<TModel>) => React.ReactNode;
   entities?: TModel[];
   entitiesCounts?: CollectionCounts;
@@ -290,10 +291,13 @@ class EntitiesContainer<TModel extends Model> extends React.Component<
     if (selectionType === SelectionType.SELECTION_USER) {
       promise = entitiesCommand.export(Array.from(selected as Set<TModel>));
     } else if (selectionType === SelectionType.SELECTION_PAGE_CONTENTS) {
-      promise = entitiesCommand.exportByFilter(loadedFilter as FilterType);
+      promise = this.props.bulkFilter
+        ? entitiesCommand.export(entities)
+        : entitiesCommand.exportByFilter(loadedFilter as FilterType);
     } else {
       promise = entitiesCommand.exportByFilter(
-        (loadedFilter as FilterType).all(),
+        this.props.bulkFilter?.((loadedFilter as FilterType).all()) ??
+          (loadedFilter as FilterType).all(),
       );
     }
 
@@ -487,9 +491,14 @@ class EntitiesContainer<TModel extends Model> extends React.Component<
       resourceIds = map(selected, res => res.id as string);
       filter = undefined;
     } else if (selectionType === SelectionType.SELECTION_PAGE_CONTENTS) {
-      filter = loadedFilter;
+      if (this.props.bulkFilter) {
+        resourceIds = map(entities, res => res.id as string);
+      } else {
+        filter = loadedFilter;
+      }
     } else {
-      filter = (loadedFilter as FilterType).all();
+      const allFilter = (loadedFilter as FilterType).all();
+      filter = this.props.bulkFilter?.(allFilter) ?? allFilter;
     }
 
     return gmp.tag
