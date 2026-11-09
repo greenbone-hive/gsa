@@ -9,7 +9,7 @@ import CollectionCounts from 'gmp/collection/collection-counts';
 import QueryFilter from 'gmp/models/filter/query-filter';
 import Task, {TASK_STATUS} from 'gmp/models/task';
 import {createSession} from 'gmp/testing';
-import Table from 'web/pages/tasks/TaskTable';
+import Table, {TaskTableWithoutBulkTrash} from 'web/pages/tasks/TaskTable';
 
 const lastReport = {
   report: {
@@ -89,6 +89,24 @@ const createGmp = () => ({
 });
 
 describe('TaskTable tests', () => {
+  test('does not expose bulk trash for managed scan groups', () => {
+    const {render} = rendererWith({
+      gmp: createGmp(),
+      capabilities: true,
+      router: true,
+    });
+    render(
+      <TaskTableWithoutBulkTrash
+        entities={[task]}
+        entitiesCounts={counts}
+        filter={filter}
+      />,
+    );
+    expect(
+      screen.queryByTitle('Move page contents to trashcan'),
+    ).not.toBeInTheDocument();
+  });
+
   test('should render', () => {
     const handleReportImport = testing.fn();
     const handleTaskClone = testing.fn();
