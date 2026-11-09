@@ -4,105 +4,30 @@
  */
 
 /** API of the isolated credential-aware task review service. */
-let operatorAuthorization: string | undefined;
 let sessionToken: string | undefined;
-let operatorChallenge: Promise<string> | undefined;
 let sessionEpoch = 0;
 
-export function clearOperatorAuthorization() {
+export function clearCredentialAwareSession() {
   sessionEpoch += 1;
   sessionToken = undefined;
-  operatorAuthorization = undefined;
-  operatorChallenge = undefined;
 }
 
-function bindSession(token: string) {
-  if (sessionToken !== token) {
-    clearOperatorAuthorization();
-    sessionToken = token;
-  }
-  return sessionEpoch;
-}
-
-function isOperatorChallenge(response: Response) {
-  return (
-    response.status === 401 &&
-    response.headers.get('WWW-Authenticate')?.includes('Scan group operator')
-  );
-}
-
-async function requestOperatorAuthorization(epoch: number) {
-  if (!operatorChallenge) {
-    operatorChallenge = Promise.resolve().then(() => {
-      // oxlint-disable-next-line eslint/no-alert
-      const credentials = window.prompt(
-        'Scan group operator authorization is required. Enter username:password',
-      );
-      if (!credentials) {
-        throw new Error('Scan group operator authorization is required.');
-      }
-      return `Basic ${btoa(credentials)}`;
-    });
-    void operatorChallenge
-      .finally(() => {
-        if (epoch === sessionEpoch) {
-          operatorChallenge = undefined;
-        }
-      })
-      .catch(() => {});
-  }
-  const authorization = await operatorChallenge;
-  if (epoch !== sessionEpoch) {
-    throw new Error('GSA session changed during operator authorization.');
-  }
-  operatorAuthorization = authorization;
-  return authorization;
-}
-
-async function fetchWithOperator(
+async function fetchWithSession(
   token: string,
   path: string,
   init: RequestInit,
-  interactive = true,
 ): Promise<Response> {
-  const epoch = bindSession(token);
-  const send = (authorization?: string) => {
-    const headers = new Headers(init.headers);
-    if (authorization) {
-      headers.set('Authorization', authorization);
-    }
-    return fetch(path, {...init, headers});
-  };
-  const sentAuthorization = operatorAuthorization;
-  let attemptedAuthorization = sentAuthorization;
-  let response = await send(sentAuthorization);
+  if (sessionToken !== token) {
+    clearCredentialAwareSession();
+    sessionToken = token;
+  }
+  const epoch = sessionEpoch;
+  const response = await fetch(path, init);
   if (epoch !== sessionEpoch) {
     throw new Error('GSA session changed during request.');
   }
-  if (isOperatorChallenge(response)) {
-    if (sentAuthorization && sentAuthorization === operatorAuthorization) {
-      operatorAuthorization = undefined;
-    }
-    if (operatorAuthorization && operatorAuthorization !== sentAuthorization) {
-      attemptedAuthorization = operatorAuthorization;
-      response = await send(attemptedAuthorization);
-    }
-    if (isOperatorChallenge(response) && interactive) {
-      attemptedAuthorization = await requestOperatorAuthorization(epoch);
-      response = await send(attemptedAuthorization);
-    }
-    if (epoch !== sessionEpoch) {
-      throw new Error('GSA session changed during request.');
-    }
-    if (
-      isOperatorChallenge(response) &&
-      attemptedAuthorization === operatorAuthorization
-    ) {
-      operatorAuthorization = undefined;
-    }
-  }
-  if (response.status === 401 && !isOperatorChallenge(response)) {
-    clearOperatorAuthorization();
+  if (response.status === 401) {
+    clearCredentialAwareSession();
   }
   return response;
 }
@@ -218,12 +143,11 @@ export async function credentialAwareApi<T>(
   token: string | undefined,
   path: string,
   body?: unknown,
-  options?: {interactive?: boolean},
 ): Promise<T> {
   if (!token) {
     throw new Error('Sign in to GSA before using credential-aware scans.');
   }
-  const response = await fetchWithOperator(
+  const response = await fetchWithSession(
     token,
     `/credential-api/${path}`,
     {
@@ -236,7 +160,6 @@ export async function credentialAwareApi<T>(
       },
       body: body === undefined ? undefined : JSON.stringify(body),
     },
-    options?.interactive !== false,
   );
   if (!response.ok) {
     let message = `Request failed (${response.status})`;
@@ -246,12 +169,10 @@ export async function credentialAwareApi<T>(
     } catch {
       // GSAD returns a non-JSON response when the GSA session has expired.
     }
-    if (response.status === 401 || response.status === 403) {
-      message = response.headers
-        .get('WWW-Authenticate')
-        ?.includes('Scan group operator')
-        ? 'Scan group operator authorization failed.'
-        : 'Your GSA session has expired. Sign in again.';
+    if (response.status === 401) {
+      message = 'Your GSA session has expired. Sign in again.';
+    } else if (response.status === 403) {
+      message = 'Administrator access required for scan groups.';
     }
     throw new Error(message);
   }
@@ -265,7 +186,7 @@ export async function downloadCombinedReport(
   if (!token) {
     throw new Error('Sign in to GSA before downloading a combined report.');
   }
-  const response = await fetchWithOperator(
+  const response = await fetchWithSession(
     token,
     `/credential-api/groups/${encodeURIComponent(groupId)}/report.csv`,
     {
@@ -280,6 +201,11 @@ export async function downloadCombinedReport(
       message = ((await response.json()) as {error?: string}).error || message;
     } catch {
       // GSAD may return HTML after session expiry.
+    }
+    if (response.status === 401) {
+      message = 'Your GSA session has expired. Sign in again.';
+    } else if (response.status === 403) {
+      message = 'Administrator access required for scan groups.';
     }
     throw new Error(message);
   }
