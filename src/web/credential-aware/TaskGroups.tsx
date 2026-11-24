@@ -23,6 +23,10 @@ const TaskGroups = ({mode = 'tasks'}: Props) => {
   const [error, setError] = useState('');
   const [starting, setStarting] = useState<string>();
   const [pendingGroup, setPendingGroup] = useState<GroupSummary>();
+  const [pendingDeleteGroup, setPendingDeleteGroup] = useState<GroupSummary>();
+  const [recovering, setRecovering] = useState<string>();
+  const [deleting, setDeleting] = useState<string>();
+  const [publishing, setPublishing] = useState<string>();
   const [openReportId, setOpenReportId] = useState<string>();
   const visibleGroups =
     mode === 'reports'
@@ -73,6 +77,63 @@ const TaskGroups = ({mode = 'tasks'}: Props) => {
       setError((err as Error).message);
     } finally {
       setStarting(undefined);
+    }
+  };
+
+  const recover = async (group: GroupSummary) => {
+    setRecovering(group.id);
+    setError('');
+    try {
+      await credentialAwareApi(
+        token,
+        `groups/${encodeURIComponent(group.id)}/recover`,
+        {},
+      );
+      await refresh();
+      window.dispatchEvent(new Event('credential-aware-groups-changed'));
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setRecovering(undefined);
+    }
+  };
+
+  const deleteGroup = async (group: GroupSummary) => {
+    setDeleting(group.id);
+    setError('');
+    try {
+      await credentialAwareApi(
+        token,
+        `groups/${encodeURIComponent(group.id)}/delete`,
+        {},
+      );
+      await refresh();
+      window.dispatchEvent(new Event('credential-aware-groups-changed'));
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setDeleting(undefined);
+    }
+  };
+
+  const publish = async (group: GroupSummary) => {
+    setPublishing(group.id);
+    setError('');
+    try {
+      const result = await credentialAwareApi<{
+        state?: 'pending' | 'failed' | 'blocked';
+        error?: string;
+      }>(token, `groups/${encodeURIComponent(group.id)}/publish`, {});
+      await refresh();
+      if (result.state === 'failed' || result.state === 'blocked') {
+        setError(
+          result.error || 'Combined report publication needs attention.',
+        );
+      }
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setPublishing(undefined);
     }
   };
 
@@ -149,7 +210,26 @@ const TaskGroups = ({mode = 'tasks'}: Props) => {
                       </ul>
                     </details>
                   </td>
-                  <td>{group.status}</td>
+                  <td>
+                    {group.status}
+                    {group.native_error && (
+                      <p role="alert">{group.native_error}</p>
+                    )}
+                    {group.native_import_state === 'pending' && (
+                      <p>Combined report is being published.</p>
+                    )}
+                    {group.native_import_state === 'creating' && (
+                      <p>Preparing combined report.</p>
+                    )}
+                    {group.native_import_state === 'failed' && (
+                      <p role="alert">Combined report publication failed.</p>
+                    )}
+                    {group.native_import_state === 'blocked' && (
+                      <p role="alert">
+                        Combined report publication needs operator attention.
+                      </p>
+                    )}
+                  </td>
                   <td>
                     {group.done_count}/{group.host_count}
                   </td>
@@ -203,6 +283,37 @@ const TaskGroups = ({mode = 'tasks'}: Props) => {
                             Expand the scan to manage individual hosts.
                           </span>
                         )}
+                      {mode === 'tasks' &&
+                        group.status === 'Attention needed' && (
+                          <Button
+                            disabled={recovering === group.id}
+                            type="button"
+                            onClick={() => void recover(group)}
+                          >
+                            Recover scan
+                          </Button>
+                        )}
+                      {mode === 'tasks' &&
+                        (group.native_import_state === 'failed' ||
+                          group.native_import_state === 'blocked') && (
+                          <Button
+                            disabled={publishing === group.id}
+                            type="button"
+                            onClick={() => void publish(group)}
+                          >
+                            Retry combined report
+                          </Button>
+                        )}
+                      {mode === 'tasks' && (
+                        <Button
+                          disabled={deleting === group.id}
+                          type="button"
+                          variant="outline"
+                          onClick={() => setPendingDeleteGroup(group)}
+                        >
+                          Delete scan group
+                        </Button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -222,8 +333,8 @@ const TaskGroups = ({mode = 'tasks'}: Props) => {
         <ConfirmationDialog
           content={
             pendingGroup.status === 'Done'
-              ? `Run ${pendingGroup.name} again for all ${pendingGroup.children.length} hosts? New reports will be created per host. The combined view may show a mix of old and new reports until all scans finish.`
-              : `Start ${pendingGroup.name} for all ${pendingGroup.children.length} hosts?`
+              ? `Run ${pendingGroup.name} again across ${pendingGroup.host_count} hosts in ${pendingGroup.children.length} background scans? The scans will be queued and run as capacity permits. New reports will be created for each scan.`
+              : `Start ${pendingGroup.name} across ${pendingGroup.host_count} hosts in ${pendingGroup.children.length} background scans? The scans will be queued and run as capacity permits.`
           }
           rightButtonTitle={
             pendingGroup.status === 'Done' ? 'Run again' : 'Start scan'
@@ -238,6 +349,19 @@ const TaskGroups = ({mode = 'tasks'}: Props) => {
             const group = pendingGroup;
             setPendingGroup(undefined);
             void start(group);
+          }}
+        />
+      )}
+      {pendingDeleteGroup && (
+        <ConfirmationDialog
+          content={`Delete ${pendingDeleteGroup.name} and its managed scans? Active or unreconciled scans cannot be deleted. If recovery is required, inspect the native child task, then use Recover scan before retrying.`}
+          rightButtonTitle="Delete scan group"
+          title="Delete multi-target scan group"
+          onClose={() => setPendingDeleteGroup(undefined)}
+          onResumeClick={() => {
+            const group = pendingDeleteGroup;
+            setPendingDeleteGroup(undefined);
+            void deleteGroup(group);
           }}
         />
       )}

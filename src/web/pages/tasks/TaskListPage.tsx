@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
+import {useState} from 'react';
 import {TASKS_FILTER_FILTER} from 'gmp/models/filter';
 import QueryFilter from 'gmp/models/filter/query-filter';
 import type Task from 'gmp/models/task';
@@ -13,27 +14,35 @@ import {
   USE_DEFAULT_RELOAD_INTERVAL,
   USE_DEFAULT_RELOAD_INTERVAL_ACTIVE,
 } from 'web/components/loading/Reload';
+import {lookupManagedTaskIds} from 'web/credential-aware/api';
 import {MultiTargetTasksProvider} from 'web/credential-aware/MultiTargetTaskContext';
+import {
+  deleteSelectedOrdinaryTasks,
+  lookupManagedIdsForDeletion,
+} from 'web/credential-aware/safe-bulk-delete';
 import EntitiesPage from 'web/entities/EntitiesPage';
 import withEntitiesContainer, {
   type WithEntitiesContainerComponentProps,
 } from 'web/entities/withEntitiesContainer';
 import useGmp from 'web/hooks/useGmp';
+import useSessionToken from 'web/hooks/useSessionToken';
 import useTranslation from 'web/hooks/useTranslation';
 import TaskDashboard, {TASK_DASHBOARD_ID} from 'web/pages/tasks/dashboard';
 import TaskToolBarIcons from 'web/pages/tasks/icons/TaskListPageToolBarIcons';
 import TaskComponent from 'web/pages/tasks/TaskComponent';
 import TaskFilterDialog from 'web/pages/tasks/TaskFilterDialog';
-import TaskTable, {TaskTableWithoutBulkTrash} from 'web/pages/tasks/TaskTable';
+import TaskTable from 'web/pages/tasks/TaskTable';
 import {
   loadVisibleEntities,
   selector as entitiesSelector,
   visibleTaskFilter,
 } from 'web/store/entities/tasks';
+import SelectionType from 'web/utils/selection-type';
 
 type TaskListPageProps = WithEntitiesContainerComponentProps<Task>;
 
 interface TaskEntitiesPageProps {
+  onDeleteBulk?: () => Promise<void>;
   onAdvancedTaskWizardClick?: () => void;
   onImportTaskCreateClick?: () => void;
   onModifyTaskWizardClick?: () => void;
@@ -63,7 +72,40 @@ const TaskListPage = ({
   ...props
 }: TaskListPageProps) => {
   const [_] = useTranslation();
-  const showCredentialAwareTasks = useGmp().settings.enableCredentialAwareTasks;
+  const gmp = useGmp();
+  const showCredentialAwareTasks = gmp.settings.enableCredentialAwareTasks;
+  const token = useSessionToken();
+  const [bulkDeleteError, setBulkDeleteError] = useState('');
+  const deleteBulk = async () => {
+    setBulkDeleteError('');
+    if (!showCredentialAwareTasks) {
+      return props.onDeleteBulk();
+    }
+    if (props.selectionType !== SelectionType.SELECTION_USER) {
+      setBulkDeleteError(
+        'Select ordinary tasks individually before deleting. Page and all-filtered deletion are unavailable while multi-target scans are enabled.',
+      );
+      return;
+    }
+    const selected = Array.from(props.entitiesSelected ?? []);
+    if (!selected.length) {
+      setBulkDeleteError('Select at least one ordinary task to delete.');
+      return;
+    }
+    try {
+      await deleteSelectedOrdinaryTasks(
+        selected,
+        ids =>
+          lookupManagedIdsForDeletion(selected, gmp.session.username, () =>
+            lookupManagedTaskIds(token, ids),
+          ),
+        tasks => gmp.tasks.delete(tasks),
+      );
+      onChanged();
+    } catch (error) {
+      setBulkDeleteError((error as Error).message);
+    }
+  };
   const taskList = (
     <TaskComponent
       onAdvancedTaskWizardSaved={onChanged}
@@ -108,6 +150,7 @@ const TaskListPage = ({
       }) => (
         <>
           <PageTitle title={_('Tasks')} />
+          {bulkDeleteError && <p role="alert">{bulkDeleteError}</p>}
           <EntitiesPage<Task, TaskEntitiesPageProps>
             {...props}
             dashboard={() => (
@@ -125,12 +168,11 @@ const TaskListPage = ({
             filtersFilter={TASKS_FILTER_FILTER}
             sectionIcon={<TaskIcon size="large" />}
             showMultiTarget={showCredentialAwareTasks}
-            table={
-              showCredentialAwareTasks ? TaskTableWithoutBulkTrash : TaskTable
-            }
+            table={TaskTable}
             title={_('Tasks')}
             toolBarIcons={TaskToolBarIcons}
             onAdvancedTaskWizardClick={advancedTaskWizard}
+            onDeleteBulk={deleteBulk}
             onError={onError}
             onFilterChanged={onFilterChanged}
             onImportTaskCreateClick={createImportTask}
@@ -155,7 +197,11 @@ const TaskListPage = ({
     </TaskComponent>
   );
   return showCredentialAwareTasks ? (
-    <MultiTargetTasksProvider>{taskList}</MultiTargetTasksProvider>
+    <MultiTargetTasksProvider
+      taskIds={props.entities?.map(task => task.id) ?? []}
+    >
+      {taskList}
+    </MultiTargetTasksProvider>
   ) : (
     taskList
   );

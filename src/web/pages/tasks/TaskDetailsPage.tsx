@@ -52,6 +52,7 @@ import withEntityContainer, {
 import useFeatures from 'web/hooks/useFeatures';
 import useGmp from 'web/hooks/useGmp';
 import useTranslation from 'web/hooks/useTranslation';
+import useUserName from 'web/hooks/useUserName';
 import {TARGET_RESOURCE_PROPERTIES_NAMES} from 'web/pages/targets/TargetComponent';
 import TaskDetailsPageToolBarIcons from 'web/pages/tasks/icons/TaskDetailsPageToolBarIcons';
 import TaskComponent from 'web/pages/tasks/TaskComponent';
@@ -164,10 +165,16 @@ const Details = ({entity, links}: DetailsProps) => {
 const TaskToolbar = (
   props: React.ComponentProps<typeof TaskDetailsPageToolBarIcons>,
 ) => {
-  const {byTaskId} = useMultiTargetTasks();
+  const {byTaskId, managedTaskIds, ownershipKnown, operatorDenied} =
+    useMultiTargetTasks();
+  const username = useUserName();
   if (
+    !ownershipKnown ||
+    (operatorDenied && (!username || props.entity.owner?.name !== username)) ||
+    managedTaskIds.has(props.entity.id) ||
     byTaskId[props.entity.id] ||
-    props.entity.comment?.startsWith('Multi-target review task; group ')
+    props.entity.comment?.startsWith('Multi-target review task; group ') ||
+    props.entity.comment?.startsWith('Credential review group ')
   ) {
     return <ListIcon page="tasks" title="Task List" />;
   }
@@ -302,7 +309,9 @@ const TaskDetailsPage = ({
     </TaskComponent>
   );
   return showMultiTargetTasks ? (
-    <MultiTargetTasksProvider>{page}</MultiTargetTasksProvider>
+    <MultiTargetTasksProvider taskIds={[entity.id]}>
+      {page}
+    </MultiTargetTasksProvider>
   ) : (
     page
   );

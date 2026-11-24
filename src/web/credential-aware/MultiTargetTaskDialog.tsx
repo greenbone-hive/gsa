@@ -12,6 +12,7 @@ import MultiSelect from 'web/components/form/MultiSelect';
 import Select from 'web/components/form/Select';
 import TextField from 'web/components/form/TextField';
 import {
+  CredentialAwareApiError,
   credentialAwareApi,
   type Inventory,
   type TaskGroup,
@@ -31,6 +32,8 @@ interface Props {
   onCreated: (group: TaskGroup) => void;
   onUseStandard: (draft: TaskRequest) => void;
 }
+
+const MAX_BACKGROUND_SCANS = 16;
 
 const MultiTargetTaskDialog = ({
   initial,
@@ -120,8 +123,19 @@ const MultiTargetTaskDialog = ({
         request(),
       );
       if (revision.current === currentRevision) {
-        setPlan(result);
-        setPreviewRevision(currentRevision);
+        const scanCount = result.scan_units?.length ?? result.units.length;
+        if (!/^[0-9a-f]{64}$/.test(result.plan_fingerprint || '')) {
+          setPreviewError(
+            'Scan plan verification is unavailable. Update the controller and preview again.',
+          );
+        } else if (scanCount > MAX_BACKGROUND_SCANS) {
+          setPreviewError(
+            `This plan needs ${scanCount} background scans; the limit is ${MAX_BACKGROUND_SCANS}. Reduce the source targets or distinct credential sets.`,
+          );
+        } else {
+          setPlan(result);
+          setPreviewRevision(currentRevision);
+        }
       }
     } catch (err) {
       if (revision.current === currentRevision) {
@@ -140,13 +154,33 @@ const MultiTargetTaskDialog = ({
         'Select the source targets and click Preview effective credentials before creating the task.',
       );
     }
-    const group = await credentialAwareApi<TaskGroup>(
-      token,
-      'groups',
-      request(),
-    );
-    onCreated(group);
-    onClose();
+    const scanCount = plan.scan_units?.length ?? plan.units.length;
+    if (scanCount > MAX_BACKGROUND_SCANS) {
+      throw new Error(`The limit is ${MAX_BACKGROUND_SCANS} background scans.`);
+    }
+    if (!/^[0-9a-f]{64}$/.test(plan.plan_fingerprint || '')) {
+      throw new Error('Scan plan verification is unavailable. Preview again.');
+    }
+    try {
+      const group = await credentialAwareApi<TaskGroup>(token, 'groups', {
+        ...request(),
+        expected_scan_count: scanCount,
+        expected_plan_fingerprint: plan.plan_fingerprint,
+      });
+      onCreated(group);
+      onClose();
+    } catch (reason) {
+      if (reason instanceof CredentialAwareApiError && reason.status === 409) {
+        revision.current += 1;
+        setPlan(undefined);
+        setPreviewRevision(undefined);
+        setPreviewError(
+          'The scan plan changed since preview. Preview again to review the new background scan count.',
+        );
+        return;
+      }
+      throw reason;
+    }
   };
 
   const credentialName = (id: string) =>
@@ -244,9 +278,15 @@ const MultiTargetTaskDialog = ({
           <p>
             <strong>
               {plan.units.length} hosts in{' '}
-              {plan.scan_units?.length || plan.units.length} scans.
+              {plan.scan_units?.length ?? plan.units.length} background scans.
             </strong>{' '}
             The task remains stopped until you start it.
+          </p>
+          <p role="alert">
+            Capacity warning: Creating this task creates{' '}
+            {plan.scan_units?.length ?? plan.units.length} separate scan tasks.
+            When started, they are queued and run as capacity permits, so more
+            background scans can increase completion time.
           </p>
           <table style={{width: '100%'}}>
             <thead>

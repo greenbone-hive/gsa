@@ -20,7 +20,9 @@ const MultiTargetTaskPanel = ({group}: Props) => {
   const {start, stop, refresh} = useMultiTargetTasks();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const active = group.children.some(child => ACTIVE.includes(child.status));
+  const active =
+    ACTIVE.includes(group.status) ||
+    group.children.some(child => ACTIVE.includes(child.status));
 
   const act = async (operation: 'start' | 'stop') => {
     setBusy(true);

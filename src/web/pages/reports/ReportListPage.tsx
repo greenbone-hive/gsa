@@ -250,7 +250,13 @@ const ReportListPage = ({
     </>
   );
   return showMultiTargetTasks ? (
-    <MultiTargetTasksProvider>{reportsPage}</MultiTargetTasksProvider>
+    <MultiTargetTasksProvider
+      taskIds={(entities ?? [])
+        .map(report => report.report?.task?.id)
+        .filter((id): id is string => Boolean(id))}
+    >
+      {reportsPage}
+    </MultiTargetTasksProvider>
   ) : (
     reportsPage
   );

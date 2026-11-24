@@ -6,10 +6,22 @@
 /** API of the isolated credential-aware task review service. */
 let sessionToken: string | undefined;
 let sessionEpoch = 0;
+let summaryDeniedToken: string | undefined;
+
+export class CredentialAwareApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+  ) {
+    super(message);
+    this.name = 'CredentialAwareApiError';
+  }
+}
 
 export function clearCredentialAwareSession() {
   sessionEpoch += 1;
   sessionToken = undefined;
+  summaryDeniedToken = undefined;
 }
 
 async function fetchWithSession(
@@ -64,6 +76,7 @@ export interface TaskUnit {
 
 export interface TaskPlan {
   name: string;
+  plan_fingerprint: string;
   units: TaskUnit[];
   scan_units?: Array<{
     hosts: string[];
@@ -101,6 +114,7 @@ export interface GroupSummary {
   native_task_id: string | null;
   native_report_id: string | null;
   native_error: string | null;
+  native_import_state?: 'creating' | 'pending' | 'failed' | 'blocked' | null;
   status: string;
   host_count: number;
   done_count: number;
@@ -136,6 +150,8 @@ export interface TaskRequest {
   target_ids: string[];
   config_id: string;
   scanner_id: string;
+  expected_scan_count?: number;
+  expected_plan_fingerprint?: string;
   overrides: [];
 }
 
@@ -147,20 +163,16 @@ export async function credentialAwareApi<T>(
   if (!token) {
     throw new Error('Sign in to GSA before using credential-aware scans.');
   }
-  const response = await fetchWithSession(
-    token,
-    `/credential-api/${path}`,
-    {
-      method: body === undefined ? 'GET' : 'POST',
-      credentials: 'same-origin',
-      cache: 'no-store',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-GSA-Token': token,
-      },
-      body: body === undefined ? undefined : JSON.stringify(body),
+  const response = await fetchWithSession(token, `/credential-api/${path}`, {
+    method: body === undefined ? 'GET' : 'POST',
+    credentials: 'same-origin',
+    cache: 'no-store',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-GSA-Token': token,
     },
-  );
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
   if (!response.ok) {
     let message = `Request failed (${response.status})`;
     try {
@@ -174,9 +186,92 @@ export async function credentialAwareApi<T>(
     } else if (response.status === 403) {
       message = 'Administrator access required for scan groups.';
     }
-    throw new Error(message);
+    throw new CredentialAwareApiError(message, response.status);
   }
   return (await response.json()) as T;
+}
+
+/** Check only IDs already present in the user's current GSA view. */
+export async function lookupManagedTaskIds(
+  token: string | undefined,
+  candidateIds: string[],
+): Promise<string[]> {
+  const ids = [...new Set(candidateIds)];
+  const managed: string[] = [];
+  for (let first = 0; first < ids.length; first += 100) {
+    const page = ids.slice(first, first + 100);
+    const response = await credentialAwareApi<{managed_task_ids: unknown}>(
+      token,
+      'groups/task-membership',
+      {task_ids: page},
+    );
+    if (
+      !Array.isArray(response.managed_task_ids) ||
+      !response.managed_task_ids.every(
+        id => typeof id === 'string' && page.includes(id),
+      )
+    ) {
+      throw new Error('Cannot verify managed scan ownership. Try again later.');
+    }
+    managed.push(...response.managed_task_ids);
+  }
+  return managed;
+}
+
+/** Fetch status only for groups represented by tasks in the current view. */
+export async function lookupGroupSummaries(
+  token: string | undefined,
+  candidateIds: string[],
+): Promise<GroupSummary[]> {
+  const ids = [...new Set(candidateIds)];
+  if (!ids.length) {
+    return [];
+  }
+  if (token && token === summaryDeniedToken) {
+    throw new CredentialAwareApiError(
+      'Administrator access required for scan groups.',
+      403,
+    );
+  }
+  const groups = new Map<string, GroupSummary>();
+  for (let first = 0; first < ids.length; first += 100) {
+    const page = ids.slice(first, first + 100);
+    let response: unknown;
+    try {
+      response = await credentialAwareApi<unknown>(token, 'groups/summary', {
+        task_ids: page,
+      });
+    } catch (reason) {
+      if (
+        token &&
+        reason instanceof CredentialAwareApiError &&
+        reason.status === 403
+      ) {
+        summaryDeniedToken = token;
+      }
+      throw reason;
+    }
+    if (
+      !Array.isArray(response) ||
+      !response.every(
+        group =>
+          group &&
+          typeof group.id === 'string' &&
+          Array.isArray(group.children) &&
+          (page.includes(group.native_task_id) ||
+            group.children.some(
+              (child: {task_id?: string}) =>
+                child && page.includes(child.task_id ?? ''),
+            )),
+      )
+    ) {
+      throw new Error('Cannot verify managed scan ownership. Try again later.');
+    }
+    for (const group of response as GroupSummary[]) {
+      groups.set(group.id, group);
+    }
+  }
+  return [...groups.values()];
 }
 
 export async function downloadCombinedReport(

@@ -91,31 +91,22 @@ const TableFooter = createEntitiesFooter({
   trash: true,
   download: 'tasks.xml',
 });
-const TableFooterWithoutTrash = createEntitiesFooter({
-  span: 10,
-  trash: false,
-  download: 'tasks.xml',
-});
 
 const RowDetails = withRowDetails<Task>('task', 10)(TaskDetails);
 
 const TaskTableHeader = withEntitiesHeader<HeaderProps>(actionsColumn)(Header);
 
-const createTaskTable = (footer: typeof TableFooter) =>
-  createEntitiesTable<
-    Task,
-    EntitiesFooterProps<Task>,
-    HeaderProps,
-    TaskRowProps
-  >({
-    emptyTitle: _l('No Tasks available'),
-    row: TaskRow,
-    rowDetails: RowDetails,
-    header: TaskTableHeader,
-    footer,
-  });
+const TaskTable = createEntitiesTable<
+  Task,
+  EntitiesFooterProps<Task>,
+  HeaderProps,
+  TaskRowProps
+>({
+  emptyTitle: _l('No Tasks available'),
+  row: TaskRow,
+  rowDetails: RowDetails,
+  header: TaskTableHeader,
+  footer: TableFooter,
+});
 
-export const TaskTableWithoutBulkTrash = createTaskTable(
-  TableFooterWithoutTrash,
-);
-export default createTaskTable(TableFooter);
+export default TaskTable;
