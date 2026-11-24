@@ -96,7 +96,7 @@ const RowDetails = withRowDetails<Task>('task', 10)(TaskDetails);
 
 const TaskTableHeader = withEntitiesHeader<HeaderProps>(actionsColumn)(Header);
 
-export default createEntitiesTable<
+const TaskTable = createEntitiesTable<
   Task,
   EntitiesFooterProps<Task>,
   HeaderProps,
@@ -108,3 +108,5 @@ export default createEntitiesTable<
   header: TaskTableHeader,
   footer: TableFooter,
 });
+
+export default TaskTable;

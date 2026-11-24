@@ -12,10 +12,13 @@ import {
   fireEvent,
   wait,
 } from 'web/testing';
+import {type FilterType} from 'gmp/models/filter';
 import QueryFilter from 'gmp/models/filter/query-filter';
 import PortList from 'gmp/models/port-list';
 import {createSession} from 'gmp/testing';
 import EntitiesContainer from 'web/entities/EntitiesContainer';
+import {visibleTaskFilter} from 'web/store/entities/tasks';
+import SelectionType from 'web/utils/selection-type';
 
 const currentSettingsResponse = {
   data: {
@@ -36,16 +39,18 @@ const showErrorMessage = testing.fn();
 const showSuccessMessage = testing.fn();
 const onDownload = testing.fn();
 
-const setup = gmp => {
+const setup = (gmp, bulkFilter?: (filter: FilterType) => FilterType) => {
   const {render} = rendererWith({gmp, store: true, router: true});
   const initialFilter = new QueryFilter();
   render(
     <EntitiesContainer
+      bulkFilter={bulkFilter}
       entities={[new PortList({id: '1', name: 'Port List 1'})]}
       filter={initialFilter}
       gmp={gmp}
       gmpName="portlist"
       isLoading={false}
+      loadedFilter={initialFilter}
       notify={notify}
       reload={reload}
       showError={showError}
@@ -54,7 +59,7 @@ const setup = gmp => {
       updateFilter={updateFilter}
       onDownload={onDownload}
     >
-      {({onDownloadBulk, onTagsBulk}) => (
+      {({onDownloadBulk, onSelectionTypeChange, onTagsBulk}) => (
         <>
           <button
             data-testid="download-button"
@@ -64,6 +69,13 @@ const setup = gmp => {
           </button>
           <button data-testid="tags-button" onClick={() => onTagsBulk()}>
             Open Tags
+          </button>
+          <button
+            onClick={() =>
+              onSelectionTypeChange(SelectionType.SELECTION_FILTER)
+            }
+          >
+            Select all filtered
           </button>
         </>
       )}
@@ -76,11 +88,13 @@ const setup = gmp => {
 };
 
 const createGmp = ({
+  exportEntities = testing.fn().mockResolvedValue({data: {id: '123'}}),
   exportByFilter = testing.fn().mockResolvedValue({data: {id: '123'}}),
   currentSettings = testing.fn().mockResolvedValue(currentSettingsResponse),
   getAllTags = testing.fn().mockResolvedValue({data: []}),
 } = {}) => ({
   portlists: {
+    export: exportEntities,
     exportByFilter,
   },
   tags: {
@@ -91,6 +105,29 @@ const createGmp = ({
 });
 
 describe('EntitiesContainer', () => {
+  test('bulk page export uses displayed IDs and all-filtered export excludes children', async () => {
+    const exportEntities = testing.fn().mockResolvedValue({data: 'page'});
+    const exportByFilter = testing.fn().mockResolvedValue({data: 'filtered'});
+    const gmp = createGmp({exportEntities, exportByFilter});
+    const {downloadButton} = setup(gmp, filter =>
+      QueryFilter.fromString(visibleTaskFilter(filter)),
+    );
+    await userEvent.click(downloadButton);
+    expect(exportEntities).toHaveBeenCalledWith([
+      expect.objectContaining({id: '1'}),
+    ]);
+    expect(exportByFilter).not.toHaveBeenCalled();
+
+    await userEvent.click(
+      screen.getByRole('button', {name: 'Select all filtered'}),
+    );
+    await userEvent.click(downloadButton);
+    expect(exportByFilter).toHaveBeenCalledTimes(1);
+    const exportedFilter = exportByFilter.mock.calls[0][0];
+    expect(exportedFilter.toFilterCriteriaString()).toContain(
+      'not comment~"Credential review group "',
+    );
+  });
   test('should allow downloading entities in bulk', async () => {
     const gmp = createGmp();
     const {downloadButton} = setup(gmp);

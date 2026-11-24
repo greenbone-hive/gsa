@@ -14,6 +14,7 @@ import type Permission from 'gmp/models/permission';
 import {type default as Task, USAGE_TYPE} from 'gmp/models/task';
 import {isDefined} from 'gmp/utils/identity';
 import {TaskIcon} from 'web/components/icon';
+import ListIcon from 'web/components/icon/ListIcon';
 import Layout from 'web/components/layout/Layout';
 import PageTitle from 'web/components/layout/PageTitle';
 import {
@@ -33,6 +34,10 @@ import TableBody from 'web/components/table/TableBody';
 import TableCol from 'web/components/table/TableCol';
 import TableData from 'web/components/table/TableData';
 import TableRow from 'web/components/table/TableRow';
+import {
+  MultiTargetTasksProvider,
+  useMultiTargetTasks,
+} from 'web/credential-aware/MultiTargetTaskContext';
 import EntitiesTab from 'web/entity/EntitiesTab';
 import EntityPage from 'web/entity/EntityPage';
 import EntityPermissions, {
@@ -45,7 +50,9 @@ import withEntityContainer, {
   permissionsResourceFilter,
 } from 'web/entity/withEntityContainer';
 import useFeatures from 'web/hooks/useFeatures';
+import useGmp from 'web/hooks/useGmp';
 import useTranslation from 'web/hooks/useTranslation';
+import useUserName from 'web/hooks/useUserName';
 import {TARGET_RESOURCE_PROPERTIES_NAMES} from 'web/pages/targets/TargetComponent';
 import TaskDetailsPageToolBarIcons from 'web/pages/tasks/icons/TaskDetailsPageToolBarIcons';
 import TaskComponent from 'web/pages/tasks/TaskComponent';
@@ -90,6 +97,8 @@ interface TaskDetailsPageProps {
 const Details = ({entity, links}: DetailsProps) => {
   const [_] = useTranslation();
   const features = useFeatures();
+  const {byTaskId} = useMultiTargetTasks();
+  const group = byTaskId[entity.id];
 
   const isCredentialStore = features.featureEnabled('ENABLE_CREDENTIAL_STORES');
 
@@ -108,7 +117,11 @@ const Details = ({entity, links}: DetailsProps) => {
 
           <TableRow>
             <TableData>{_('Comment')}</TableData>
-            <TableData>{entity.comment}</TableData>
+            <TableData>
+              {entity.comment?.startsWith('Multi-target review task; group ')
+                ? 'Scans the selected targets with effective credentials for each host.'
+                : entity.comment}
+            </TableData>
           </TableRow>
 
           <TableRow>
@@ -119,7 +132,15 @@ const Details = ({entity, links}: DetailsProps) => {
           <TableRow>
             <TableData>{_('Status')}</TableData>
             <TableData>
-              <TaskStatus task={entity} />
+              {group ? (
+                `${group.status} · ${group.done_count}/${group.host_count} hosts`
+              ) : entity.comment?.startsWith(
+                  'Multi-target review task; group ',
+                ) ? (
+                'Loading scan status…'
+              ) : (
+                <TaskStatus task={entity} />
+              )}
             </TableData>
           </TableRow>
 
@@ -141,6 +162,25 @@ const Details = ({entity, links}: DetailsProps) => {
   );
 };
 
+const TaskToolbar = (
+  props: React.ComponentProps<typeof TaskDetailsPageToolBarIcons>,
+) => {
+  const {byTaskId, managedTaskIds, ownershipKnown, operatorDenied} =
+    useMultiTargetTasks();
+  const username = useUserName();
+  if (
+    !ownershipKnown ||
+    (operatorDenied && (!username || props.entity.owner?.name !== username)) ||
+    managedTaskIds.has(props.entity.id) ||
+    byTaskId[props.entity.id] ||
+    props.entity.comment?.startsWith('Multi-target review task; group ') ||
+    props.entity.comment?.startsWith('Credential review group ')
+  ) {
+    return <ListIcon page="tasks" title="Task List" />;
+  }
+  return <TaskDetailsPageToolBarIcons {...props} />;
+};
+
 const TaskDetailsPage = ({
   entity,
   permissions = [],
@@ -154,6 +194,7 @@ const TaskDetailsPage = ({
 }: TaskDetailsPageProps) => {
   const navigate = useNavigate();
   const [_] = useTranslation();
+  const showMultiTargetTasks = useGmp().settings.enableCredentialAwareTasks;
 
   useEffect(() => {
     if (isDefined(entity) && entity.usageType !== USAGE_TYPE.scan) {
@@ -161,7 +202,7 @@ const TaskDetailsPage = ({
     }
   }, [entity, navigate]);
 
-  return (
+  const page = (
     <TaskComponent
       onCloneError={onError}
       onCloned={goToDetails('task', navigate)}
@@ -200,7 +241,7 @@ const TaskDetailsPage = ({
           sectionIcon={<TaskIcon size="large" />}
           title={_('Task')}
           toolBarIcons={
-            <TaskDetailsPageToolBarIcons
+            <TaskToolbar
               entity={entity}
               notesCount={notes.length}
               overridesCount={overrides.length}
@@ -266,6 +307,13 @@ const TaskDetailsPage = ({
         </EntityPage>
       )}
     </TaskComponent>
+  );
+  return showMultiTargetTasks ? (
+    <MultiTargetTasksProvider taskIds={[entity.id]}>
+      {page}
+    </MultiTargetTasksProvider>
+  ) : (
+    page
   );
 };
 

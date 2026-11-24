@@ -83,6 +83,7 @@ export type WithEntitiesContainerComponentProps<TEntity extends Model> =
   EntitiesContainerRenderProps<TEntity>;
 
 interface WithEntitiesContainerOptions<TEntity extends Model = Model> {
+  bulkFilter?: (gmp: Gmp) => ((filter: FilterType) => FilterType) | undefined;
   reloadInterval?: (props: ReloadIntervalProps<TEntity>) => number | void;
   fallbackFilter?: FilterType;
   entitiesSelector: (state: unknown) => EntitiesSelector<TEntity>;
@@ -136,6 +137,7 @@ const withEntitiesContainer =
       loadEntities: loadEntitiesFunc,
       reloadInterval = noop,
       fallbackFilter,
+      bulkFilter,
     }: WithEntitiesContainerOptions<TEntity>,
   ) =>
   (
@@ -194,6 +196,7 @@ const withEntitiesContainer =
         >
           {({reload}) => (
             <EntitiesContainer<TEntity>
+              bulkFilter={bulkFilter?.(gmp)}
               entities={entities}
               entitiesCounts={entitiesCounts}
               entitiesError={entitiesError}
